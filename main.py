@@ -12,11 +12,17 @@ import logging
 import asyncio
 import tempfile
 from pydub import AudioSegment
+from pydub.utils import which
 from PIL import Image, ImageDraw, ImageFont
 import random
 import re
 import io
 import aiohttp
+
+# FFmpegのパスを設定
+AudioSegment.converter = which("ffmpeg")
+AudioSegment.ffmpeg = which("ffmpeg")
+AudioSegment.ffprobe = which("ffprobe")
 
 # スクリプトのディレクトリを基準に.envファイルを読み込む
 script_dir = Path(__file__).parent
@@ -862,24 +868,9 @@ async def on_ready():
     for cmd in bot.tree.get_commands():
         print(f"- {cmd.name}: {cmd.description}")
     
-    # スラッシュコマンドを強制的に書き換え
+    # スラッシュコマンドを同期
     try:
-        test_guild = discord.Object(id=TEST_GUILD_ID)
-        
-        # Step 1: 既存のギルドコマンドを完全にクリア
-        print("=== 既存コマンドのクリア処理開始 ===")
-        bot.tree.clear_commands(guild=test_guild)
-        empty_sync = await bot.tree.sync(guild=test_guild)
-        print(f"テストサーバーのコマンドをクリア完了: {len(empty_sync)} 個")
-        
-        # Step 2: 新しいコマンドを追加
-        print("=== 新しいコマンドの追加処理開始 ===")
-        synced_guild = await bot.tree.sync(guild=test_guild)
-        print(f'テストサーバー ({TEST_GUILD_ID}) に {len(synced_guild)} 個のスラッシュコマンドを強制同期しました')
-        for cmd in synced_guild:
-            print(f"  ✅ {cmd['name']}: {cmd.get('description', 'N/A')}")
-        
-        # Step 3: グローバルにも同期
+        # 開発環境ではグローバル同期のみを使用
         print("=== グローバル同期処理開始 ===")
         synced_global = await bot.tree.sync()
         print(f'グローバルに {len(synced_global)} 個のスラッシュコマンドを同期しました')
