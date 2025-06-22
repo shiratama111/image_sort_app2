@@ -342,86 +342,13 @@ def save_user_data(user_id, data):
 
 def is_premium_user(user_id):
     """ユーザーがプレミアムかどうかを判定"""
-    try:
-        # サーバーオーナーの特別判定
-        community_guild = bot.get_guild(int(settings.get("community_server_id")))
-        if not community_guild:
-            logger.warning(f"Community server not found: {settings.get('community_server_id')}")
-            return False
-        
-        # オーナーチェック（Discord APIベース）
-        if int(user_id) == community_guild.owner_id:
-            logger.info(f"User {user_id} is server owner - granting premium access")
-            return True
-        
-        # オーナーチェック（設定ファイルベース）
-        owner_user_id = settings.get("owner_user_id")
-        if owner_user_id and str(user_id) == str(owner_user_id):
-            logger.info(f"User {user_id} is configured owner - granting premium access")
-            return True
-        
-        logger.info(f"Debug: Checking user {user_id} in guild {community_guild.name}")
-        
-        member = community_guild.get_member(int(user_id))
-        if not member:
-            logger.warning(f"User {user_id} not found in community server {community_guild.name}")
-            logger.info(f"Debug: Guild has {community_guild.member_count} members")
-            logger.info(f"Debug: This may be due to the user having a role higher than the Bot's role")
-            return False
-        
-        logger.info(f"Debug: Found member {member.name}#{member.discriminator}")
-        logger.info(f"Debug: Member roles: {[f'{role.name}({role.id})' for role in member.roles]}")
-        
-        # プレミアムロールの確認
-        premium_role_id = int(settings.get("premium_role_id"))
-        logger.info(f"Debug: Looking for premium role ID: {premium_role_id}")
-        
-        has_premium_role = any(role.id == premium_role_id for role in member.roles)
-        
-        logger.info(f"Premium check for user {user_id} ({member.name}): {has_premium_role}")
-        return has_premium_role
-        
-    except Exception as e:
-        logger.error(f"Error checking premium status for user {user_id}: {e}")
-        return False
+    # 自分用のBotなので全員プレミアムとして扱う
+    return True
 
 def can_use_feature(user_data, is_premium):
     """機能使用可能かチェックし、使用回数を更新"""
-    # 日本時間（JST）で現在の日付を取得
-    jst = timezone(timedelta(hours=9))
-    today = datetime.now(jst).strftime("%Y-%m-%d")
-    
-    # プレミアムユーザーは無制限（ただし使用回数はカウント）
-    if is_premium:
-        last_used_date = user_data.get("last_used_date", "")
-        daily_usage_count = user_data.get("daily_usage_count", 0)
-        
-        # 日付が変わった場合はカウントをリセット
-        if last_used_date != today:
-            user_data["last_used_date"] = today
-            user_data["daily_usage_count"] = 1
-        else:
-            # 同じ日の場合は使用回数を増加
-            user_data["daily_usage_count"] = daily_usage_count + 1
-        
-        return True, None
-    
-    # 無料ユーザーの制限チェック
-    last_used_date = user_data.get("last_used_date", "")
-    daily_usage_count = user_data.get("daily_usage_count", 0)
-    
-    # 日付が変わった場合はカウントをリセット
-    if last_used_date != today:
-        user_data["last_used_date"] = today
-        user_data["daily_usage_count"] = 1
-        return True, None
-    
-    # 同じ日の場合は制限チェック
-    if daily_usage_count >= FREE_USER_DAILY_LIMIT:
-        return False, f"😅 今日の分の利用回数を使い切っちゃいました！\n無料プランでは1日{FREE_USER_DAILY_LIMIT}回まで利用できます。明日また遊びに来てくださいね！✨\n\n💎 **もっと使いたい場合は有料プランがおすすめです！**\n🤖 このBotのプロフィールを見ると、プレミアム会員の詳細と登録方法が載ってるよ〜"
-    
-    # 使用回数を増加
-    user_data["daily_usage_count"] = daily_usage_count + 1
+    # 制限なしで常に使用可能
+    # 使用回数のカウントも行わない（自分用のため）
     return True, None
 
 def make_praise_image(praise_text):
