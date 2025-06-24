@@ -799,7 +799,7 @@ async def transcribe_audio(message, channel, reaction_user):
             file_message = await channel.send("📄 文字起こし結果のテキストファイルです！", file=discord.File(transcript_path))
             
             # 文字起こし結果ファイルに自動でリアクションを追加
-            reactions = ['👍', '❓', '❤️', '✏️', '📝']
+            reactions = ['👍', '❓', '❤️', '✏️', '📝', '🐙']
             for reaction in reactions:
                 try:
                     await file_message.add_reaction(reaction)
@@ -825,12 +825,25 @@ async def on_ready():
     
     # スラッシュコマンドを同期
     try:
-        # 開発環境ではグローバル同期のみを使用
+        # テストギルドがある場合は、Botがそのギルドに参加しているか確認
+        if TEST_GUILD_ID:
+            test_guild_obj = bot.get_guild(TEST_GUILD_ID)
+            if test_guild_obj:
+                print(f"=== テストギルド ({TEST_GUILD_ID}: {test_guild_obj.name}) への同期処理開始 ===")
+                test_guild = discord.Object(id=TEST_GUILD_ID)
+                bot.tree.copy_global_to(guild=test_guild)
+                synced_guild = await bot.tree.sync(guild=test_guild)
+                print(f'テストギルドに {len(synced_guild)} 個のスラッシュコマンドを同期しました')
+            else:
+                print(f"⚠️ テストギルド ({TEST_GUILD_ID}) にBotが参加していません。グローバル同期のみ実行します。")
+        
+        # グローバル同期を実行
         print("=== グローバル同期処理開始 ===")
         synced_global = await bot.tree.sync()
         print(f'グローバルに {len(synced_global)} 個のスラッシュコマンドを同期しました')
         
         print("=== コマンド同期処理完了 ===")
+        print("注意: グローバルコマンドはDiscordに反映されるまで最大1時間かかる場合があります")
         
     except Exception as e:
         logger.error(f'❌ スラッシュコマンドの同期に失敗しました: {e}')
@@ -879,6 +892,17 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="/set_custom_prompt_memo", 
         value="メモ作成用のカスタムプロンプトを設定（空白入力で無効化）", 
+        inline=False
+    )
+    embed.add_field(
+        name="/upload_memo_to_github", 
+        value="メモをGitHubリポジトリにアップロード", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🆕 リアクション機能",
+        value="🐙 タコのリアクションでGitHubにメモをアップロード",
         inline=False
     )
     
@@ -1276,7 +1300,7 @@ async def activate_command(interaction: discord.Interaction):
         
         # 送信したメッセージを取得してリアクションを追加
         message = await interaction.original_response()
-        reactions = ['👍', '❓', '❤️', '✏️', '📝']
+        reactions = ['👍', '❓', '❤️', '✏️', '📝', '🐙']
         for emoji in reactions:
             await message.add_reaction(emoji)
             await asyncio.sleep(0.5)  # リアクション追加の間隔を空ける
@@ -1409,7 +1433,7 @@ async def on_raw_reaction_add(payload):
         return
     
     # リアクションの種類をチェック
-    if payload.emoji.name in ['👍', '🎤', '❤️', '❓', '✏️', '📝']:
+    if payload.emoji.name in ['👍', '🎤', '❤️', '❓', '✏️', '📝', '🐙']:
         server_id = str(payload.guild_id)
         channel_id = str(payload.channel_id)
         
@@ -1924,7 +1948,7 @@ async def on_raw_reaction_add(payload):
                                 file_message = await channel.send("📝 メモファイルを作成しました！", file=discord.File(file_obj, filename=filename))
                                 
                                 # メモファイルに自動でリアクションを追加
-                                reactions = ['👍', '❓', '❤️', '✏️', '📝']
+                                reactions = ['👍', '❓', '❤️', '✏️', '📝', '🐙']
                                 for reaction in reactions:
                                     try:
                                         await file_message.add_reaction(reaction)
@@ -2088,7 +2112,7 @@ async def on_raw_reaction_add(payload):
                                 file_message = await channel.send("📝 記事ファイルです！", file=discord.File(file_obj, filename=filename))
                                 
                                 # 記事ファイルに自動でリアクションを追加
-                                reactions = ['👍', '❓', '❤️', '✏️', '📝']
+                                reactions = ['👍', '❓', '❤️', '✏️', '📝', '🐙']
                                 for reaction in reactions:
                                     try:
                                         await file_message.add_reaction(reaction)
@@ -2117,6 +2141,149 @@ async def on_raw_reaction_add(payload):
                         except Exception as e:
                             logger.error(f"OpenAI API エラー (記事機能): {e}")
                             await channel.send(f"{user.mention} ❌ 記事の生成中にエラーが発生しました。")
+                    else:
+                        logger.error("エラー: OpenAI APIキーが設定されていません")
+                        await channel.send(f"{user.mention} ❌ エラーが発生しました。管理者にお問い合わせください。")
+                else:
+                    await channel.send(f"{user.mention} ⚠️ メッセージに内容がありません。")
+            
+            elif payload.emoji.name == '🐙':
+                # GitHubアップロード機能
+                # GitHub トークンの確認
+                if not GITHUB_TOKEN:
+                    await channel.send(
+                        f"{user.mention} ❌ GitHub連携が設定されていません。管理者にお問い合わせください。"
+                    )
+                    return
+                
+                # メッセージ内容または添付ファイル、Embedからテキストを取得
+                input_text = message.content
+                
+                # Embedがある場合は内容を抽出
+                embed_content = extract_embed_content(message)
+                if embed_content:
+                    if input_text:
+                        input_text += f"\n\n【Embed内容】\n{embed_content}"
+                    else:
+                        input_text = embed_content
+                    logger.info("Embed内容を追加")
+                
+                # 添付ファイルがある場合、テキストファイルの内容を読み取り
+                if message.attachments:
+                    for attachment in message.attachments:
+                        file_content = await read_text_attachment(attachment)
+                        if file_content:
+                            if input_text:
+                                input_text += f"\n\n【ファイル: {attachment.filename}】\n{file_content}"
+                            else:
+                                input_text = f"【ファイル: {attachment.filename}】\n{file_content}"
+                            logger.info(f"添付ファイルの内容を追加: {attachment.filename}")
+                
+                if input_text:
+                    # 処理開始メッセージ
+                    message_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
+                    await channel.send(f"{user.mention} 🐙 GitHubにメモをアップロードするよ〜！ちょっと待っててね\n📎 元メッセージ: {message_link}")
+                    
+                    # モデルを選択
+                    model = PREMIUM_USER_MODEL if is_premium else FREE_USER_MODEL
+                    
+                    # メモ用プロンプトを読み込み
+                    memo_prompt = None
+                    
+                    # 1. ユーザーのカスタムプロンプトをチェック
+                    if user_data and user_data.get('custom_prompt_memo'):
+                        memo_prompt = user_data['custom_prompt_memo']
+                        logger.info(f"ユーザー {user.name} のメモ用カスタムプロンプトを使用")
+                    
+                    # 2. カスタムプロンプトがない場合はデフォルトプロンプトファイルを使用
+                    if not memo_prompt:
+                        prompt_path = script_dir / "prompt" / "pencil_memo.txt"
+                        if prompt_path.exists():
+                            with open(prompt_path, 'r', encoding='utf-8') as f:
+                                memo_prompt = f.read()
+                            logger.info("デフォルトメモプロンプトファイルを使用")
+                        else:
+                            memo_prompt = "あなたはDiscordメッセージの内容をObsidianメモとして整理するアシスタントです。内容に忠実にメモ化してください。追加情報は加えず、原文を尊重してください。"
+                            logger.info("フォールバックメモプロンプトを使用")
+                    
+                    # プロンプトにJSON出力指示を追加
+                    json_instruction = '\n\n出力はJSON形式で、以下のフォーマットに従ってください：\n{"english_title": "english_title_for_filename", "content": "メモの内容"}'
+                    memo_prompt += json_instruction
+                    
+                    # OpenAI APIでメモを生成（JSONモード）
+                    if client_openai:
+                        try:
+                            response = client_openai.chat.completions.create(
+                                model=model,
+                                messages=[
+                                    {"role": "system", "content": memo_prompt},
+                                    {"role": "user", "content": input_text}
+                                ],
+                                max_tokens=2000,
+                                temperature=0.3,
+                                response_format={"type": "json_object"}
+                            )
+                            
+                            # JSONレスポンスをパース
+                            response_content = response.choices[0].message.content
+                            try:
+                                memo_json = json.loads(response_content)
+                                english_title = memo_json.get("english_title", "untitled_memo")
+                                content = memo_json.get("content", input_text)
+                            except json.JSONDecodeError:
+                                logger.warning(f"JSON解析エラー、フォールバックを使用: {response_content}")
+                                english_title = "untitled_memo"
+                                content = input_text
+                            
+                            # ファイル名を生成（YYYYMMDD_HHMMSS_english_title.md）
+                            now = datetime.now()
+                            timestamp = now.strftime("%Y%m%d_%H%M%S")
+                            # 英語タイトルを安全なファイル名に変換
+                            safe_english_title = re.sub(r'[^A-Za-z0-9\-_]', '', english_title)
+                            if not safe_english_title:
+                                safe_english_title = "memo"
+                            filename = f"{timestamp}_{safe_english_title}.md"
+                            
+                            # GitHubにアップロード
+                            try:
+                                g = Github(GITHUB_TOKEN)
+                                repo = g.get_repo(GITHUB_REPO_NAME)
+                                
+                                # ファイルパスを構築（ルートディレクトリに保存）
+                                file_path = filename
+                                
+                                # コミットメッセージ
+                                commit_message = f"Add memo: {filename}"
+                                
+                                # ファイルをリポジトリに作成
+                                repo.create_file(
+                                    path=file_path,
+                                    message=commit_message,
+                                    content=content.encode('utf-8'),
+                                    branch="main"
+                                )
+                                
+                                # 成功メッセージ
+                                embed = discord.Embed(
+                                    title="✅ GitHubへのアップロード完了",
+                                    description=f"メモを正常にGitHubリポジトリにアップロードしました！",
+                                    color=0x00ff00
+                                )
+                                embed.add_field(name="📄 ファイル名", value=filename, inline=False)
+                                embed.add_field(name="📁 保存場所", value=file_path, inline=False)
+                                embed.add_field(name="🔗 リポジトリ", value=f"[{GITHUB_REPO_NAME}](https://github.com/{GITHUB_REPO_NAME})", inline=False)
+                                
+                                await channel.send(f"{user.mention}", embed=embed)
+                                logger.info(f"メモをGitHubにアップロード: {file_path}")
+                                
+                            except Exception as e:
+                                logger.error(f"GitHub アップロードエラー: {e}")
+                                await channel.send(
+                                    f"{user.mention} ❌ GitHubへのアップロード中にエラーが発生しました: {str(e)}"
+                                )
+                        except Exception as e:
+                            logger.error(f"OpenAI API エラー (GitHub連携): {e}")
+                            await channel.send(f"{user.mention} ❌ メモの生成中にエラーが発生しました。")
                     else:
                         logger.error("エラー: OpenAI APIキーが設定されていません")
                         await channel.send(f"{user.mention} ❌ エラーが発生しました。管理者にお問い合わせください。")
@@ -2162,7 +2329,7 @@ async def on_message(message):
                 await asyncio.sleep(0.3)
             else:
                 # その他の場合は基本リアクション
-                basic_reactions = ['👍', '❓', '❤️', '✏️', '📝']
+                basic_reactions = ['👍', '❓', '❤️', '✏️', '📝', '🐙']
                 
                 # リアクションを追加
                 for emoji in basic_reactions:
