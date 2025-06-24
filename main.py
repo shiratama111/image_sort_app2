@@ -18,6 +18,7 @@ import random
 import re
 import io
 import aiohttp
+from github import Github
 
 # FFmpegのパスを設定
 AudioSegment.converter = which("ffmpeg")
@@ -70,6 +71,8 @@ else:
 # 環境変数からトークンを取得
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_REPO_NAME = os.getenv('GITHUB_REPO_NAME', 'shiratama111/obsidian')
 
 print(f"DISCORD_BOT_TOKEN present: {TOKEN is not None}")
 print(f"OPENAI_API_KEY present: {OPENAI_API_KEY is not None}")
@@ -1015,6 +1018,151 @@ async def set_custom_prompt_article_command(interaction: discord.Interaction):
     modal = CustomArticlePromptModal(current_prompt)
     await interaction.response.send_modal(modal)
 
+# GitHub メモアップロード用のModalクラス
+class GitHubMemoUploadModal(discord.ui.Modal, title='GitHubへメモをアップロード'):
+    def __init__(self):
+        super().__init__()
+        # メッセージ内容入力エリア
+        self.message_input = discord.ui.TextInput(
+            label='メモ内容',
+            placeholder='GitHubにアップロードするメモの内容を入力してください...',
+            style=discord.TextStyle.paragraph,
+            max_length=4000,
+            required=True
+        )
+        self.add_item(self.message_input)
+        
+        # フォルダパス入力エリア（オプション）
+        self.folder_input = discord.ui.TextInput(
+            label='フォルダパス（オプション）',
+            placeholder='例: notes/daily/ （空欄の場合はルートに保存）',
+            max_length=200,
+            required=False
+        )
+        self.add_item(self.folder_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer()
+            
+            input_text = self.message_input.value
+            folder_path = self.folder_input.value.strip().rstrip('/')
+            
+            # ユーザー情報取得
+            user = interaction.user
+            user_data = load_user_data(user.id)
+            is_premium = is_premium_user(user.id)
+            
+            # モデルを選択
+            model = PREMIUM_USER_MODEL if is_premium else FREE_USER_MODEL
+            
+            # メモ用プロンプトを読み込み
+            memo_prompt = None
+            
+            # 1. ユーザーのカスタムプロンプトをチェック
+            if user_data and user_data.get('custom_prompt_memo'):
+                memo_prompt = user_data['custom_prompt_memo']
+                logger.info(f"ユーザー {user.name} のメモ用カスタムプロンプトを使用")
+            
+            # 2. カスタムプロンプトがない場合はデフォルトプロンプトファイルを使用
+            if not memo_prompt:
+                prompt_path = script_dir / "prompt" / "pencil_memo.txt"
+                if prompt_path.exists():
+                    with open(prompt_path, 'r', encoding='utf-8') as f:
+                        memo_prompt = f.read()
+                    logger.info("デフォルトメモプロンプトファイルを使用")
+                else:
+                    memo_prompt = "あなたはDiscordメッセージの内容をObsidianメモとして整理するアシスタントです。内容に忠実にメモ化してください。追加情報は加えず、原文を尊重してください。"
+                    logger.info("フォールバックメモプロンプトを使用")
+            
+            # プロンプトにJSON出力指示を追加
+            json_instruction = '\n\n出力はJSON形式で、以下のフォーマットに従ってください：\n{"english_title": "english_title_for_filename", "content": "メモの内容"}'
+            memo_prompt += json_instruction
+            
+            # OpenAI APIでメモを生成（JSONモード）
+            if client_openai:
+                response = client_openai.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": memo_prompt},
+                        {"role": "user", "content": input_text}
+                    ],
+                    max_tokens=2000,
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                
+                # JSONレスポンスをパース
+                response_content = response.choices[0].message.content
+                try:
+                    memo_json = json.loads(response_content)
+                    english_title = memo_json.get("english_title", "untitled_memo")
+                    content = memo_json.get("content", input_text)
+                except json.JSONDecodeError:
+                    logger.warning(f"JSON解析エラー、フォールバックを使用: {response_content}")
+                    english_title = "untitled_memo"
+                    content = input_text
+                
+                # ファイル名を生成（YYYYMMDD_HHMMSS_english_title.md）
+                now = datetime.now()
+                timestamp = now.strftime("%Y%m%d_%H%M%S")
+                # 英語タイトルを安全なファイル名に変換
+                safe_english_title = re.sub(r'[^A-Za-z0-9\-_]', '', english_title)
+                if not safe_english_title:
+                    safe_english_title = "memo"
+                filename = f"{timestamp}_{safe_english_title}.md"
+                
+                # GitHubにアップロード
+                try:
+                    g = Github(GITHUB_TOKEN)
+                    repo = g.get_repo(GITHUB_REPO_NAME)
+                    
+                    # ファイルパスを構築
+                    if folder_path:
+                        file_path = f"{folder_path}/{filename}"
+                    else:
+                        file_path = filename
+                    
+                    # コミットメッセージ
+                    commit_message = f"Add memo: {filename}"
+                    
+                    # ファイルをリポジトリに作成
+                    repo.create_file(
+                        path=file_path,
+                        message=commit_message,
+                        content=content.encode('utf-8'),
+                        branch="main"
+                    )
+                    
+                    # 成功メッセージ
+                    embed = discord.Embed(
+                        title="✅ GitHubへのアップロード完了",
+                        description=f"メモを正常にGitHubリポジトリにアップロードしました！",
+                        color=0x00ff00
+                    )
+                    embed.add_field(name="📄 ファイル名", value=filename, inline=False)
+                    embed.add_field(name="📁 保存場所", value=file_path, inline=False)
+                    embed.add_field(name="🔗 リポジトリ", value=f"[{GITHUB_REPO_NAME}](https://github.com/{GITHUB_REPO_NAME})", inline=False)
+                    
+                    await interaction.followup.send(embed=embed)
+                    logger.info(f"メモをGitHubにアップロード: {file_path}")
+                    
+                except Exception as e:
+                    logger.error(f"GitHub アップロードエラー: {e}")
+                    await interaction.followup.send(
+                        f"❌ GitHubへのアップロード中にエラーが発生しました: {str(e)}", 
+                        ephemeral=True
+                    )
+            else:
+                await interaction.followup.send("❌ OpenAI APIが設定されていません。", ephemeral=True)
+                
+        except Exception as e:
+            logger.error(f"メモアップロードエラー: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ エラーが発生しました。", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ エラーが発生しました。", ephemeral=True)
+
 # メモ作成用カスタムプロンプト設定のModalクラス
 class CustomMemoPromptModal(discord.ui.Modal, title='メモ作成用カスタムプロンプト設定'):
     def __init__(self):
@@ -1132,22 +1280,6 @@ async def activate_command(interaction: discord.Interaction):
         for emoji in reactions:
             await message.add_reaction(emoji)
             await asyncio.sleep(0.5)  # リアクション追加の間隔を空ける
-        
-        # サンプル音声ファイルを送信
-        sample_audio_path = script_dir / "audio" / "sample_voice.mp3"
-        if sample_audio_path.exists():
-            try:
-                audio_message = await interaction.followup.send(
-                    "🎵 試しに音声文字起こし機能を使ってみてください！",
-                    file=discord.File(sample_audio_path)
-                )
-                # サンプル音声にマイクリアクションを追加
-                await audio_message.add_reaction('🎤')
-                logger.info("サンプル音声ファイル送信完了")
-            except Exception as e:
-                logger.error(f"サンプル音声ファイル送信エラー: {e}")
-        else:
-            logger.warning(f"サンプル音声ファイルが見つかりません: {sample_audio_path}")
     else:
         await interaction.response.send_message(f"ℹ️ このチャンネル（{interaction.channel.name}）は既に有効です。")
 
@@ -1210,6 +1342,20 @@ async def status_command(interaction: discord.Interaction):
     )
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="upload_memo_to_github", description="メモをGitHubリポジトリにアップロードします")
+async def upload_memo_to_github_command(interaction: discord.Interaction):
+    """メモをGitHubリポジトリにアップロードするコマンド"""
+    # GitHubトークンの確認
+    if not GITHUB_TOKEN:
+        await interaction.response.send_message(
+            "❌ GitHub連携が設定されていません。管理者にお問い合わせください。", 
+            ephemeral=True
+        )
+        return
+    
+    # モーダルを表示してメモ内容を入力させる
+    await interaction.response.send_modal(GitHubMemoUploadModal())
 
 @bot.tree.command(name="stats", description="Bot統計情報を表示します")
 async def stats_command(interaction: discord.Interaction):
