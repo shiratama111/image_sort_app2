@@ -2014,6 +2014,15 @@ async def on_message(message):
 
 
 if __name__ == "__main__":
+    # Replit用のkeep_alive（オプション）
+    if os.getenv('REPLIT'):
+        try:
+            from keep_alive import keep_alive
+            keep_alive()
+            logger.info("Replit keep-alive サーバーを起動しました")
+        except ImportError:
+            logger.info("keep_alive.pyが見つかりません。通常モードで起動します")
+    
     if TOKEN is None:
         logger.error("エラー: DISCORD_BOT_TOKEN 環境変数が設定されていません")
     else:
