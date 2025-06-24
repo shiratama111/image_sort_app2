@@ -1,44 +1,33 @@
-# マルチステージビルドを使用
-FROM python:3.11-slim as builder
-
-# 作業ディレクトリを設定
-WORKDIR /app
-
-# ビルドに必要なパッケージをインストール
-RUN apt-get update && apt-get install -y \
-    gcc \
-    python3-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# 依存関係ファイルをコピー
-COPY requirements.txt .
-
-# Python依存関係をインストール（wheelを作成）
-RUN pip install --user --no-cache-dir -r requirements.txt
-
-# 実行用の軽量イメージ
+# Python 3.11をベースイメージとして使用
 FROM python:3.11-slim
 
 # 作業ディレクトリを設定
 WORKDIR /app
 
-# 実行に必要なパッケージのみインストール
+# システムパッケージを更新し、必要な依存関係をインストール
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ビルドステージからPythonパッケージをコピー
-COPY --from=builder /root/.local /root/.local
+# pipをアップグレード
+RUN pip install --upgrade pip
 
-# PATHを更新
-ENV PATH=/root/.local/bin:$PATH
+# 依存関係ファイルをコピー
+COPY requirements.txt .
+
+# Python依存関係をインストール
+RUN pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションコードをコピー
 COPY . .
 
-# 非rootユーザーを作成して使用
-RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
-USER botuser
+# 環境変数の確認用（デバッグ）
+RUN python -c "import discord; print(f'Discord.py version: {discord.__version__}')"
+
+# 実行権限を付与
+RUN chmod +x start.sh
 
 # Botを実行
-CMD ["python", "main.py"]
+CMD ["./start.sh"]
