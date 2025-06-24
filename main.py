@@ -2195,16 +2195,16 @@ async def on_raw_reaction_add(payload):
                         memo_prompt = user_data['custom_prompt_memo']
                         logger.info(f"ユーザー {user.name} のメモ用カスタムプロンプトを使用")
                     
-                    # 2. カスタムプロンプトがない場合はデフォルトプロンプトファイルを使用
+                    # 2. カスタムプロンプトがない場合はGitHub用プロンプトファイルを使用
                     if not memo_prompt:
-                        prompt_path = script_dir / "prompt" / "pencil_memo.txt"
+                        prompt_path = script_dir / "prompt" / "github_memo.txt"
                         if prompt_path.exists():
                             with open(prompt_path, 'r', encoding='utf-8') as f:
                                 memo_prompt = f.read()
-                            logger.info("デフォルトメモプロンプトファイルを使用")
+                            logger.info("GitHub用メモプロンプトファイルを使用")
                         else:
-                            memo_prompt = "あなたはDiscordメッセージの内容をObsidianメモとして整理するアシスタントです。内容に忠実にメモ化してください。追加情報は加えず、原文を尊重してください。"
-                            logger.info("フォールバックメモプロンプトを使用")
+                            memo_prompt = "あなたはDiscordメッセージの内容をGitHub向けのMarkdownメモとして整理するアシスタントです。内容に忠実にメモ化し、GitHub表示に最適化してください。追加情報は加えず、原文を尊重してください。"
+                            logger.info("GitHub用フォールバックプロンプトを使用")
                     
                     # プロンプトにJSON出力指示を追加
                     json_instruction = '\n\n出力はJSON形式で、以下のフォーマットに従ってください：\n{"english_title": "english_title_for_filename", "content": "メモの内容"}'
