@@ -117,16 +117,22 @@ class SyncFriendlyFileHandler(logging.Handler):
             print(f"ログローテーションエラー: {e}")
 
 # ログ設定（同期フレンドリー）
-log_file = script_dir / "log.txt"
-sync_handler = SyncFriendlyFileHandler(log_file)
-sync_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+handlers = [logging.StreamHandler()]  # 常にコンソール出力
+
+# ローカル環境でのみファイルハンドラを追加
+if not os.getenv('RAILWAY_ENVIRONMENT'):
+    try:
+        log_file = script_dir / "log.txt"
+        sync_handler = SyncFriendlyFileHandler(log_file)
+        sync_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        handlers.append(sync_handler)
+    except Exception as e:
+        print(f"Warning: Could not create file handler: {e}")
 
 logging.basicConfig(
     level=logging.INFO,
-    handlers=[
-        sync_handler,
-        logging.StreamHandler()  # コンソールにも出力
-    ]
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=handlers
 )
 logger = logging.getLogger(__name__)
 

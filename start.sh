@@ -1,5 +1,9 @@
 #!/bin/bash
+# Railway環境を示す環境変数を設定
+export RAILWAY_ENVIRONMENT=true
+
 echo "Starting AI えびすや Bot..."
+echo "Environment: Railway"
 echo "Python version:"
 python --version
 echo "Checking environment variables..."
