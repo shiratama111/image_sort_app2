@@ -44,17 +44,36 @@ def create_required_directories():
 # 必要なディレクトリを作成
 create_required_directories()
 
-# 既存の環境変数をクリアしてから.envファイルを読み込む
-if 'OPENAI_API_KEY' in os.environ:
-    del os.environ['OPENAI_API_KEY']
-if 'DISCORD_BOT_TOKEN' in os.environ:
-    del os.environ['DISCORD_BOT_TOKEN']
+# デバッグ: 環境変数の確認
+print("=" * 50)
+print("Environment Variable Debug Info:")
+print(f"Current working directory: {os.getcwd()}")
+print(f"Script directory: {script_dir}")
+print(f"Env file path: {env_path}")
+print(f"Env file exists: {env_path.exists()}")
+print(f"RAILWAY_ENVIRONMENT: {os.getenv('RAILWAY_ENVIRONMENT')}")
 
-load_dotenv(env_path, override=True)
+# Railway環境では.envファイルを使わない
+if os.getenv('RAILWAY_ENVIRONMENT'):
+    print("Running in Railway environment - using environment variables directly")
+    # Railway環境では環境変数をクリアしない
+else:
+    print("Running in local environment - loading .env file")
+    # 既存の環境変数をクリアしてから.envファイルを読み込む
+    if 'OPENAI_API_KEY' in os.environ:
+        del os.environ['OPENAI_API_KEY']
+    if 'DISCORD_BOT_TOKEN' in os.environ:
+        del os.environ['DISCORD_BOT_TOKEN']
+    
+    load_dotenv(env_path, override=True)
 
 # 環境変数からトークンを取得
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+print(f"DISCORD_BOT_TOKEN present: {TOKEN is not None}")
+print(f"OPENAI_API_KEY present: {OPENAI_API_KEY is not None}")
+print("=" * 50)
 
 # OpenAIモデル設定
 FREE_USER_MODEL = "gpt-4.1-mini"
