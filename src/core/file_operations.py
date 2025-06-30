@@ -104,6 +104,24 @@ class FileOperationManager:
         path = Path(original_name)
         return f"{path.stem}-{index}{path.suffix}"
     
+    def get_next_index_for_file(self, destination_dir: Path, base_name: str, extension: str) -> int:
+        """指定されたベース名で次に使用可能なインデックスを取得"""
+        existing_indices = []
+        pattern = f"{base_name}-*{extension}"
+        
+        for file in destination_dir.glob(pattern):
+            # ファイル名から数字部分を抽出
+            name_parts = file.stem.split('-')
+            if len(name_parts) > 1:
+                try:
+                    index = int(name_parts[-1])
+                    existing_indices.append(index)
+                except ValueError:
+                    continue
+        
+        # 最大値の次を返す（存在しない場合は1から開始）
+        return max(existing_indices) + 1 if existing_indices else 1
+    
     def get_images_from_folder(self, folder_path: Path) -> List[Path]:
         """フォルダから画像ファイルを取得"""
         supported_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.PNG', '.JPG', '.JPEG', '.WEBP'}

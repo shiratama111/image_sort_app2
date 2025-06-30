@@ -36,9 +36,11 @@ class MainWindow(QMainWindow):
         self.keep_folder: Optional[Path] = None
         self.delete_folder: Optional[Path] = None
         self.delete_to_trash: bool = True  # デフォルトはゴミ箱へ
+        self.auto_rename: bool = True  # デフォルトは自動リネーム有効
         self.undo_stack: List[dict] = []  # {'action': str, 'source': Path, 'destination': Path, 'row': int}
         
         self.setup_ui()
+        self.setup_menu()
         self.setup_shortcuts()
         self.load_settings()
         
@@ -96,7 +98,13 @@ class MainWindow(QMainWindow):
         # ステータスバー
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        
+        # ファイル数表示用のラベル
+        self.file_count_label = QLabel()
+        self.status_bar.addPermanentWidget(self.file_count_label)
+        
         self.update_status("")
+        self.update_file_counts()
         
     def setup_toolbar(self):
         """ツールバーのセットアップ"""
@@ -119,6 +127,46 @@ class MainWindow(QMainWindow):
         # 現在のフォルダ表示
         self.folder_label = QLabel("フォルダが選択されていません")
         toolbar.addWidget(self.folder_label)
+        
+    def setup_menu(self):
+        """メニューバーのセットアップ"""
+        menubar = self.menuBar()
+        
+        # ファイルメニュー
+        file_menu = menubar.addMenu("ファイル")
+        
+        open_action = QAction("フォルダを開く...", self)
+        open_action.setShortcut(QKeySequence.Open)
+        open_action.triggered.connect(self.open_folder)
+        file_menu.addAction(open_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QAction("終了", self)
+        exit_action.setShortcut(QKeySequence.Quit)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # フォルダ管理メニュー
+        folder_menu = menubar.addMenu("フォルダ管理")
+        
+        rename_keep_folder_action = QAction("選別先フォルダ名を変更...", self)
+        rename_keep_folder_action.triggered.connect(self.rename_keep_folder)
+        folder_menu.addAction(rename_keep_folder_action)
+        
+        # 編集メニュー
+        edit_menu = menubar.addMenu("編集")
+        
+        undo_action = QAction("元に戻す", self)
+        undo_action.setShortcut(QKeySequence.Undo)
+        undo_action.triggered.connect(self.undo_last_action)
+        edit_menu.addAction(undo_action)
+        
+        edit_menu.addSeparator()
+        
+        settings_action = QAction("設定...", self)
+        settings_action.triggered.connect(self.open_settings)
+        edit_menu.addAction(settings_action)
         
     def setup_shortcuts(self):
         """キーボードショートカットのセットアップ"""
@@ -183,6 +231,7 @@ class MainWindow(QMainWindow):
                 
             self.folder_label.setText(f"フォルダ: {folder_path.name}")
             self.update_status(f"{len(images)}枚の画像を読み込みました")
+            self.update_file_counts()
             self.folder_loaded.emit(folder_path)
             
         except Exception as e:
@@ -198,7 +247,9 @@ class MainWindow(QMainWindow):
             self.keep_folder = dialog.get_keep_folder()
             self.delete_folder = dialog.get_delete_folder()
             self.delete_to_trash = dialog.is_delete_to_trash()
+            self.auto_rename = dialog.is_auto_rename_enabled()
             self.save_settings()
+            self.update_file_counts()
             
     def on_image_selected(self, current, previous):
         """画像が選択されたときの処理"""
@@ -262,6 +313,7 @@ class MainWindow(QMainWindow):
                 
                 # ステータス更新
                 self.update_status(f"{source_path.name} をゴミ箱へ移動しました")
+                self.update_file_counts()
             else:
                 QMessageBox.critical(self, "エラー", "ファイルの削除に失敗しました")
                 
@@ -299,8 +351,15 @@ class MainWindow(QMainWindow):
             elif self.image_list.count() > 1:
                 self.image_list.setCurrentRow(self.image_list.count() - 2)
                 
-            # ファイルを移動
-            destination_path = self.file_operations.move_file(source_path, destination_folder)
+            # ファイルを移動（自動リネームが有効な場合は連番を付与）
+            rename_pattern = None
+            if self.auto_rename and action == "keep":
+                index = self.file_operations.get_next_index_for_file(
+                    destination_folder, source_path.stem, source_path.suffix
+                )
+                rename_pattern = self.file_operations.get_rename_pattern(source_path.name, index)
+            
+            destination_path = self.file_operations.move_file(source_path, destination_folder, rename_pattern)
             
             if destination_path:
                 # Undo スタックに追加
@@ -316,6 +375,7 @@ class MainWindow(QMainWindow):
             
             # ステータス更新
             self.update_status(f"{source_path.name} を {action} フォルダへ移動しました")
+            self.update_file_counts()
             self.image_moved.emit(source_path, destination_path)
             
         except Exception as e:
@@ -329,6 +389,24 @@ class MainWindow(QMainWindow):
             
         operation = self.undo_stack.pop()
         action = operation['action']
+        
+        if action == "rename_folder":
+            # フォルダ名変更を元に戻す
+            old_path = operation['old_path']
+            new_path = operation['new_path']
+            try:
+                new_path.rename(old_path)
+                self.keep_folder = old_path
+                self.save_settings()
+                self.update_file_counts()
+                self.update_status(f"フォルダ名を元に戻しました: {old_path.name}")
+                return
+            except Exception as e:
+                self.update_status(f"フォルダ名を元に戻せませんでした: {str(e)}")
+                # 失敗した場合はスタックに戻す
+                self.undo_stack.append(operation)
+                return
+        
         source_path = operation['source']
         destination_path = operation['destination']
         original_row = operation['row']
@@ -370,6 +448,7 @@ class MainWindow(QMainWindow):
                     pass
                 
                 self.update_status(f"{source_path.name} を元に戻しました")
+                self.update_file_counts()
             else:
                 self.update_status("元に戻す操作に失敗しました")
                 # 失敗した場合はスタックに戻す
@@ -408,6 +487,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("keep_folder", str(self.keep_folder) if self.keep_folder else "")
         self.settings.setValue("delete_folder", str(self.delete_folder) if self.delete_folder else "")
         self.settings.setValue("delete_to_trash", self.delete_to_trash)
+        self.settings.setValue("auto_rename", self.auto_rename)
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
         
@@ -422,6 +502,7 @@ class MainWindow(QMainWindow):
             self.delete_folder = Path(delete_folder)
             
         self.delete_to_trash = self.settings.value("delete_to_trash", True, type=bool)
+        self.auto_rename = self.settings.value("auto_rename", True, type=bool)
             
         geometry = self.settings.value("geometry")
         if geometry:
@@ -431,6 +512,70 @@ class MainWindow(QMainWindow):
         if window_state:
             self.restoreState(window_state)
             
+    def update_file_counts(self):
+        """フォルダ内のファイル数を更新"""
+        source_count = 0
+        dest_count = 0
+        
+        # 選別対象フォルダの画像数
+        if self.current_folder and self.current_folder.exists():
+            source_count = len(self.file_operations.get_images_from_folder(self.current_folder))
+            
+        # 選別先フォルダの画像数
+        if self.keep_folder and self.keep_folder.exists():
+            dest_count = len(self.file_operations.get_images_from_folder(self.keep_folder))
+            
+        # ステータスバーに表示
+        count_text = f"選別対象: {source_count}枚 | 選別先: {dest_count}枚"
+        self.file_count_label.setText(count_text)
+        
+    def rename_keep_folder(self):
+        """選別先フォルダ名を変更"""
+        if not self.keep_folder:
+            QMessageBox.warning(self, "警告", "選別先フォルダが設定されていません")
+            return
+            
+        from PySide6.QtWidgets import QInputDialog
+        
+        current_name = self.keep_folder.name
+        new_name, ok = QInputDialog.getText(
+            self,
+            "フォルダ名を変更",
+            "新しいフォルダ名:",
+            text=current_name
+        )
+        
+        if ok and new_name and new_name != current_name:
+            try:
+                # 新しいパスを作成
+                new_path = self.keep_folder.parent / new_name
+                
+                # フォルダが既に存在するかチェック
+                if new_path.exists():
+                    QMessageBox.warning(self, "警告", f"フォルダ '{new_name}' は既に存在します")
+                    return
+                    
+                # フォルダ名を変更
+                self.keep_folder.rename(new_path)
+                
+                # Undo スタックに追加
+                self.undo_stack.append({
+                    'action': 'rename_folder',
+                    'old_path': self.keep_folder,
+                    'new_path': new_path,
+                    'row': -1  # フォルダ操作なので行番号は不要
+                })
+                
+                # 内部パスを更新
+                self.keep_folder = new_path
+                self.save_settings()
+                self.update_file_counts()
+                
+                QMessageBox.information(self, "成功", f"フォルダ名を '{new_name}' に変更しました")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "エラー", f"フォルダ名の変更に失敗しました: {str(e)}")
+        
     def closeEvent(self, event):
         """ウィンドウを閉じる時の処理"""
         self.save_settings()

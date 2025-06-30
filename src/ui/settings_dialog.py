@@ -97,6 +97,10 @@ class SettingsDialog(QDialog):
         self.create_date_folders_check = QCheckBox("日付別のサブフォルダを作成")
         auto_create_layout.addWidget(self.create_date_folders_check)
         
+        self.auto_rename_check = QCheckBox("選別先への移動時に自動で連番リネーム")
+        self.auto_rename_check.setChecked(True)
+        auto_create_layout.addWidget(self.auto_rename_check)
+        
         layout.addWidget(auto_create_group)
         
         # 削除動作の設定
@@ -253,6 +257,10 @@ class SettingsDialog(QDialog):
         """削除動作がゴミ箱への移動かを取得"""
         return self.delete_to_trash_radio.isChecked()
         
+    def is_auto_rename_enabled(self) -> bool:
+        """自動リネームが有効かを取得"""
+        return self.auto_rename_check.isChecked()
+        
     def save_settings(self):
         """設定を保存"""
         # フォルダ設定
@@ -261,6 +269,7 @@ class SettingsDialog(QDialog):
         self.settings.setValue("auto_create_folders", self.auto_create_folders_check.isChecked())
         self.settings.setValue("create_date_folders", self.create_date_folders_check.isChecked())
         self.settings.setValue("delete_to_trash", self.delete_to_trash_radio.isChecked())
+        self.settings.setValue("auto_rename", self.auto_rename_check.isChecked())
         
         # 表示設定
         self.settings.setValue("thumbnail_size", self.thumbnail_size_spin.value())
@@ -290,6 +299,11 @@ class SettingsDialog(QDialog):
         delete_to_trash = self.settings.value("delete_to_trash", True, type=bool)
         self.delete_to_trash_radio.setChecked(delete_to_trash)
         self.delete_to_folder_radio.setChecked(not delete_to_trash)
+        
+        # 自動リネーム設定
+        self.auto_rename_check.setChecked(
+            self.settings.value("auto_rename", True, type=bool)
+        )
         
         # 表示設定
         self.thumbnail_size_spin.setValue(
