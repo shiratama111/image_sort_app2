@@ -20,11 +20,23 @@ class FileOperation:
     def undo(self) -> bool:
         if self.operation_type == OperationType.MOVE and self.destination_path:
             try:
-                shutil.move(str(self.destination_path), str(self.source_path))
+                # 元のパスに既にファイルが存在する場合は、別の名前で復元
+                restore_path = self.source_path
+                if restore_path.exists():
+                    base_name = self.source_path.stem
+                    extension = self.source_path.suffix
+                    counter = 1
+                    while restore_path.exists():
+                        restore_path = self.source_path.parent / f"{base_name}_restored_{counter}{extension}"
+                        counter += 1
+                
+                shutil.move(str(self.destination_path), str(restore_path))
                 return True
-            except Exception:
+            except Exception as e:
+                print(f"Undo failed: {e}")
                 return False
         elif self.operation_type == OperationType.DELETE:
+            # ゴミ箱からの復元は現時点ではサポートしない
             return False
         return False
 

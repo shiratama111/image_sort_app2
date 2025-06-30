@@ -4,14 +4,14 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QSplitter, QMessageBox,
-    QToolBar, QStatusBar
+    QToolBar, QStatusBar, QListWidgetItem
 )
-from PySide6.QtCore import Qt, Signal, QSettings
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtCore import Qt, Signal, QSettings, QSize
+from PySide6.QtGui import QAction, QKeySequence, QPixmap
 from pathlib import Path
 from typing import Optional, List
 
-from .image_list_widget import ImageListWidget
+from .image_list_widget import ImageListWidget, ImageItemWidget
 # デバッグ用：同期版を使用する場合はコメントを切り替える
 # from .image_list_widget_sync import ImageListWidgetSync as ImageListWidget
 from .image_preview_widget import ImagePreviewWidget
@@ -35,7 +35,7 @@ class MainWindow(QMainWindow):
         self.current_folder: Optional[Path] = None
         self.keep_folder: Optional[Path] = None
         self.delete_folder: Optional[Path] = None
-        self.undo_stack: List[tuple] = []  # (action, source, destination)
+        self.undo_stack: List[dict] = []  # {'action': str, 'source': Path, 'destination': Path, 'row': int}
         
         self.setup_ui()
         self.setup_shortcuts()
@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
         self._move_current_image(self.keep_folder, "keep")
         
     def move_to_trash(self):
-        """現在の画像をゴミ箱へ移動（Del キー）"""
+        """現在の画像をゴミ箱へ移動（Backspace キー）"""
         current_item = self.image_list.currentItem()
         if not current_item:
             return
@@ -235,10 +235,21 @@ class MainWindow(QMainWindow):
             elif self.image_list.count() > 1:
                 self.image_list.setCurrentRow(self.image_list.count() - 2)
                 
+            # 現在の行番号を保存
+            current_row = self.image_list.row(current_item)
+            
             # ファイルをゴミ箱へ
             if self.file_operations.delete_file(source_path):
+                # Undo スタックに追加（ゴミ箱操作は特別扱い）
+                self.undo_stack.append({
+                    'action': 'trash',
+                    'source': source_path,
+                    'destination': None,
+                    'row': current_row
+                })
+                
                 # リストから削除
-                self.image_list.takeItem(self.image_list.row(current_item))
+                self.image_list.takeItem(current_row)
                 
                 # ステータス更新
                 self.update_status(f"{source_path.name} をゴミ箱へ移動しました")
@@ -269,8 +280,11 @@ class MainWindow(QMainWindow):
         source_path = image_widget.image_path
         
         try:
+            # 現在の行番号を保存
+            current_row = self.image_list.row(current_item)
+            
             # 次の画像を選択
-            next_row = self.image_list.row(current_item) + 1
+            next_row = current_row + 1
             if next_row < self.image_list.count():
                 self.image_list.setCurrentRow(next_row)
             elif self.image_list.count() > 1:
@@ -279,11 +293,17 @@ class MainWindow(QMainWindow):
             # ファイルを移動
             destination_path = self.file_operations.move_file(source_path, destination_folder)
             
-            # Undo スタックに追加
-            self.undo_stack.append((action, source_path, destination_path))
-            
-            # リストから削除
-            self.image_list.takeItem(self.image_list.row(current_item))
+            if destination_path:
+                # Undo スタックに追加
+                self.undo_stack.append({
+                    'action': action,
+                    'source': source_path,
+                    'destination': destination_path,
+                    'row': current_row
+                })
+                
+                # リストから削除
+                self.image_list.takeItem(current_row)
             
             # ステータス更新
             self.update_status(f"{source_path.name} を {action} フォルダへ移動しました")
@@ -298,19 +318,58 @@ class MainWindow(QMainWindow):
             self.update_status("元に戻す操作がありません")
             return
             
-        action, source_path, destination_path = self.undo_stack.pop()
+        operation = self.undo_stack.pop()
+        action = operation['action']
+        source_path = operation['source']
+        destination_path = operation['destination']
+        original_row = operation['row']
         
+        if action == "trash":
+            self.update_status("ゴミ箱への移動は元に戻せません")
+            # スタックに戻す
+            self.undo_stack.append(operation)
+            return
+            
         try:
-            # ファイルを元の場所に戻す
-            self.file_operations.move_file(destination_path, source_path.parent)
-            
-            # リストに再追加
-            self.image_list.add_image(source_path)
-            
-            self.update_status(f"{source_path.name} を元に戻しました")
-            
+            # FileOperationManagerのundoを使用
+            if self.file_operations.undo_last_operation():
+                # リストの適切な位置に再追加
+                # アイテムを作成
+                item_widget = ImageItemWidget(source_path, self.image_list.thumbnail_size)
+                item = QListWidgetItem()
+                item.setSizeHint(QSize(400, self.image_list.thumbnail_size.height() + 10))
+                
+                # 元の位置に挿入
+                if original_row <= self.image_list.count():
+                    self.image_list.insertItem(original_row, item)
+                else:
+                    self.image_list.addItem(item)
+                    
+                self.image_list.setItemWidget(item, item_widget)
+                
+                # サムネイルを読み込む
+                try:
+                    pixmap = QPixmap(str(source_path))
+                    if not pixmap.isNull():
+                        thumbnail = pixmap.scaled(
+                            self.image_list.thumbnail_size,
+                            Qt.KeepAspectRatio,
+                            Qt.SmoothTransformation
+                        )
+                        item_widget.set_thumbnail(thumbnail)
+                except Exception:
+                    pass
+                
+                self.update_status(f"{source_path.name} を元に戻しました")
+            else:
+                self.update_status("元に戻す操作に失敗しました")
+                # 失敗した場合はスタックに戻す
+                self.undo_stack.append(operation)
+                
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"元に戻す操作に失敗しました: {str(e)}")
+            # 失敗した場合はスタックに戻す
+            self.undo_stack.append(operation)
             
     def select_previous_image(self):
         """前の画像を選択"""
