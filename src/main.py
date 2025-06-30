@@ -1,12 +1,12 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from ui.main_window import MainWindow
+from .ui.main_window import MainWindow
 
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Image Selection Assistant")
-    app.setOrganizationName("ImageSelectionApp")
+    app.setApplicationName("AI画像選別支援アプリケーション")
+    app.setOrganizationName("ImageRenameApp")
     
     window = MainWindow()
     window.show()

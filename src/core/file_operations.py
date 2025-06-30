@@ -91,3 +91,17 @@ class FileOperationManager:
     def get_rename_pattern(self, original_name: str, index: int) -> str:
         path = Path(original_name)
         return f"{path.stem}-{index}{path.suffix}"
+    
+    def get_images_from_folder(self, folder_path: Path) -> List[Path]:
+        """フォルダから画像ファイルを取得"""
+        supported_extensions = {'.png', '.jpg', '.jpeg', '.webp', '.PNG', '.JPG', '.JPEG', '.WEBP'}
+        images = []
+        
+        if not folder_path.exists() or not folder_path.is_dir():
+            return images
+            
+        for file_path in sorted(folder_path.iterdir()):
+            if file_path.is_file() and file_path.suffix in supported_extensions:
+                images.append(file_path)
+                
+        return images

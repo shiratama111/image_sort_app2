@@ -11,11 +11,11 @@ from PySide6.QtGui import QAction, QKeySequence
 from pathlib import Path
 from typing import Optional, List
 
-from ui.image_list_widget import ImageListWidget
-from ui.image_preview_widget import ImagePreviewWidget
-from ui.settings_dialog import SettingsDialog
-from core.file_operations import FileOperationManager
-from models.image_item import ImageItem
+from .image_list_widget import ImageListWidget
+from .image_preview_widget import ImagePreviewWidget
+from .settings_dialog import SettingsDialog
+from ..core.file_operations import FileOperationManager
+from ..models.image_item import ImageItem
 
 
 class MainWindow(QMainWindow):
@@ -70,6 +70,26 @@ class MainWindow(QMainWindow):
         splitter.setSizes([400, 800])
         main_layout.addWidget(splitter)
         
+        # ボタンバー
+        button_layout = QHBoxLayout()
+        
+        # 受入れボタン
+        self.accept_button = QPushButton("受入れ (Enter)")
+        self.accept_button.clicked.connect(self.move_to_keep_folder)
+        button_layout.addWidget(self.accept_button)
+        
+        # 破棄ボタン
+        self.reject_button = QPushButton("破棄 (Del)")
+        self.reject_button.clicked.connect(self.move_to_trash)
+        button_layout.addWidget(self.reject_button)
+        
+        # Undoボタン
+        self.undo_button = QPushButton("Undo (Ctrl+Z)")
+        self.undo_button.clicked.connect(self.undo_last_action)
+        button_layout.addWidget(self.undo_button)
+        
+        main_layout.addLayout(button_layout)
+        
         # ステータスバー
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -105,11 +125,11 @@ class MainWindow(QMainWindow):
         enter_action.triggered.connect(self.move_to_keep_folder)
         self.addAction(enter_action)
         
-        # Backspace: 削除フォルダへ移動
-        backspace_action = QAction(self)
-        backspace_action.setShortcut(Qt.Key_Backspace)
-        backspace_action.triggered.connect(self.move_to_delete_folder)
-        self.addAction(backspace_action)
+        # Delete: 削除フォルダへ移動（ゴミ箱へ）
+        delete_action = QAction(self)
+        delete_action.setShortcut(Qt.Key_Delete)
+        delete_action.triggered.connect(self.move_to_trash)
+        self.addAction(delete_action)
         
         # Ctrl+Z: 元に戻す
         undo_action = QAction(self)
@@ -128,6 +148,12 @@ class MainWindow(QMainWindow):
         down_action.setShortcut(Qt.Key_Down)
         down_action.triggered.connect(self.select_next_image)
         self.addAction(down_action)
+        
+        # F11: フルスクリーン切り替え
+        fullscreen_action = QAction(self)
+        fullscreen_action.setShortcut(Qt.Key_F11)
+        fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        self.addAction(fullscreen_action)
         
     def open_folder(self):
         """フォルダを開く"""
@@ -187,6 +213,39 @@ class MainWindow(QMainWindow):
             
         self._move_current_image(self.keep_folder, "keep")
         
+    def move_to_trash(self):
+        """現在の画像をゴミ箱へ移動（Del キー）"""
+        current_item = self.image_list.currentItem()
+        if not current_item:
+            return
+            
+        image_widget = self.image_list.itemWidget(current_item)
+        if not image_widget or not hasattr(image_widget, 'image_path'):
+            return
+            
+        source_path = image_widget.image_path
+        
+        try:
+            # 次の画像を選択
+            next_row = self.image_list.row(current_item) + 1
+            if next_row < self.image_list.count():
+                self.image_list.setCurrentRow(next_row)
+            elif self.image_list.count() > 1:
+                self.image_list.setCurrentRow(self.image_list.count() - 2)
+                
+            # ファイルをゴミ箱へ
+            if self.file_operations.delete_file(source_path):
+                # リストから削除
+                self.image_list.takeItem(self.image_list.row(current_item))
+                
+                # ステータス更新
+                self.update_status(f"{source_path.name} をゴミ箱へ移動しました")
+            else:
+                QMessageBox.critical(self, "エラー", "ファイルの削除に失敗しました")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"ファイルの削除に失敗しました: {str(e)}")
+            
     def move_to_delete_folder(self):
         """現在の画像を削除フォルダへ移動"""
         if not self.delete_folder:
@@ -266,6 +325,13 @@ class MainWindow(QMainWindow):
     def update_status(self, message: str):
         """ステータスバーを更新"""
         self.status_bar.showMessage(message)
+        
+    def toggle_fullscreen(self):
+        """フルスクリーン表示を切り替え"""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
         
     def save_settings(self):
         """設定を保存"""

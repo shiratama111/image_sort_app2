@@ -8,28 +8,26 @@ from pathlib import Path
 from typing import Optional
 import concurrent.futures
 from functools import lru_cache
+from ..utils.thumbnail_cache import ThumbnailCache
 
 
 class ThumbnailLoader(QThread):
     """サムネイル読み込み用スレッド"""
     thumbnail_loaded = pyqtSignal(Path, QPixmap)
     
-    def __init__(self, image_path: Path, size: QSize):
+    def __init__(self, image_path: Path, size: QSize, cache: ThumbnailCache):
         super().__init__()
         self.image_path = image_path
         self.size = size
+        self.cache = cache
         
     def run(self):
-        """サムネイルを読み込む"""
+        """サムネイルを読み込む（キャッシュ対応）"""
         try:
-            pixmap = QPixmap(str(self.image_path))
-            if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(
-                    self.size,
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation
-                )
-                self.thumbnail_loaded.emit(self.image_path, scaled_pixmap)
+            # キャッシュまたは新規生成
+            pixmap = self.cache.generate_thumbnail(self.image_path, self.size)
+            if pixmap and not pixmap.isNull():
+                self.thumbnail_loaded.emit(self.image_path, pixmap)
         except Exception as e:
             print(f"サムネイル読み込みエラー: {self.image_path} - {str(e)}")
 
@@ -95,6 +93,7 @@ class ImageListWidget(QListWidget):
         super().__init__()
         self.thumbnail_size = QSize(150, 150)
         self.thumbnail_loaders = []
+        self.thumbnail_cache = ThumbnailCache()
         self.setup_ui()
         
     def setup_ui(self):
@@ -144,7 +143,7 @@ class ImageListWidget(QListWidget):
         
     def load_thumbnail_async(self, image_path: Path, item_widget: ImageItemWidget):
         """サムネイルを非同期で読み込む"""
-        loader = ThumbnailLoader(image_path, self.thumbnail_size)
+        loader = ThumbnailLoader(image_path, self.thumbnail_size, self.thumbnail_cache)
         loader.thumbnail_loaded.connect(
             lambda path, pixmap: self.on_thumbnail_loaded(path, pixmap, item_widget)
         )
