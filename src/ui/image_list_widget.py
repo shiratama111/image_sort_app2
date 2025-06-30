@@ -144,16 +144,20 @@ class ImageListWidget(QListWidget):
     def load_thumbnail_async(self, image_path: Path, item_widget: ImageItemWidget):
         """サムネイルを非同期で読み込む"""
         loader = ThumbnailLoader(image_path, self.thumbnail_size, self.thumbnail_cache)
-        loader.thumbnail_loaded.connect(
-            lambda path, pixmap: self.on_thumbnail_loaded(path, pixmap, item_widget)
-        )
+        # ローダーにウィジェットの参照を保持
+        loader.item_widget = item_widget
+        loader.thumbnail_loaded.connect(self.on_thumbnail_loaded)
         loader.start()
         self.thumbnail_loaders.append(loader)
         
-    def on_thumbnail_loaded(self, image_path: Path, pixmap: QPixmap, item_widget: ImageItemWidget):
+    def on_thumbnail_loaded(self, image_path: Path, pixmap: QPixmap):
         """サムネイル読み込み完了時の処理"""
-        if item_widget.image_path == image_path:
-            item_widget.set_thumbnail(pixmap)
+        # senderからローダーを取得
+        loader = self.sender()
+        if hasattr(loader, 'item_widget'):
+            item_widget = loader.item_widget
+            if item_widget.image_path == image_path:
+                item_widget.set_thumbnail(pixmap)
             
         # 完了したローダーを削除
         for loader in self.thumbnail_loaders[:]:

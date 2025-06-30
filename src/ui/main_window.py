@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.accept_button)
         
         # 破棄ボタン
-        self.reject_button = QPushButton("破棄 (Del)")
+        self.reject_button = QPushButton("破棄 (Backspace)")
         self.reject_button.clicked.connect(self.move_to_trash)
         button_layout.addWidget(self.reject_button)
         
@@ -125,9 +125,9 @@ class MainWindow(QMainWindow):
         enter_action.triggered.connect(self.move_to_keep_folder)
         self.addAction(enter_action)
         
-        # Delete: 削除フォルダへ移動（ゴミ箱へ）
+        # Backspace: 削除フォルダへ移動（ゴミ箱へ）
         delete_action = QAction(self)
-        delete_action.setShortcut(Qt.Key_Delete)
+        delete_action.setShortcut(Qt.Key_Backspace)
         delete_action.triggered.connect(self.move_to_trash)
         self.addAction(delete_action)
         
