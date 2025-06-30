@@ -4,7 +4,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QFileDialog,
-    QDialogButtonBox, QGroupBox, QCheckBox,
+    QDialogButtonBox, QGroupBox, QCheckBox, QRadioButton,
     QSpinBox, QComboBox, QTabWidget, QWidget
 )
 from PySide6.QtCore import Qt, QSettings
@@ -98,6 +98,19 @@ class SettingsDialog(QDialog):
         auto_create_layout.addWidget(self.create_date_folders_check)
         
         layout.addWidget(auto_create_group)
+        
+        # 削除動作の設定
+        delete_behavior_group = QGroupBox("削除動作")
+        delete_behavior_layout = QVBoxLayout(delete_behavior_group)
+        
+        self.delete_to_trash_radio = QRadioButton("ゴミ箱へ移動（復元不可）")
+        self.delete_to_folder_radio = QRadioButton("削除フォルダへ移動（復元可能）")
+        self.delete_to_trash_radio.setChecked(True)  # デフォルトはゴミ箱
+        
+        delete_behavior_layout.addWidget(self.delete_to_trash_radio)
+        delete_behavior_layout.addWidget(self.delete_to_folder_radio)
+        
+        layout.addWidget(delete_behavior_group)
         layout.addStretch()
         
         return widget
@@ -236,6 +249,10 @@ class SettingsDialog(QDialog):
         """削除フォルダを取得"""
         return self.delete_folder
         
+    def is_delete_to_trash(self) -> bool:
+        """削除動作がゴミ箱への移動かを取得"""
+        return self.delete_to_trash_radio.isChecked()
+        
     def save_settings(self):
         """設定を保存"""
         # フォルダ設定
@@ -243,6 +260,7 @@ class SettingsDialog(QDialog):
         self.settings.setValue("delete_folder", str(self.delete_folder) if self.delete_folder else "")
         self.settings.setValue("auto_create_folders", self.auto_create_folders_check.isChecked())
         self.settings.setValue("create_date_folders", self.create_date_folders_check.isChecked())
+        self.settings.setValue("delete_to_trash", self.delete_to_trash_radio.isChecked())
         
         # 表示設定
         self.settings.setValue("thumbnail_size", self.thumbnail_size_spin.value())
@@ -267,6 +285,11 @@ class SettingsDialog(QDialog):
         self.create_date_folders_check.setChecked(
             self.settings.value("create_date_folders", False, type=bool)
         )
+        
+        # 削除動作の設定
+        delete_to_trash = self.settings.value("delete_to_trash", True, type=bool)
+        self.delete_to_trash_radio.setChecked(delete_to_trash)
+        self.delete_to_folder_radio.setChecked(not delete_to_trash)
         
         # 表示設定
         self.thumbnail_size_spin.setValue(

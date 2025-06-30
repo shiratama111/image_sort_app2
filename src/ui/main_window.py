@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
         self.current_folder: Optional[Path] = None
         self.keep_folder: Optional[Path] = None
         self.delete_folder: Optional[Path] = None
+        self.delete_to_trash: bool = True  # デフォルトはゴミ箱へ
         self.undo_stack: List[dict] = []  # {'action': str, 'source': Path, 'destination': Path, 'row': int}
         
         self.setup_ui()
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
         
         # 破棄ボタン
         self.reject_button = QPushButton("破棄 (Backspace)")
-        self.reject_button.clicked.connect(self.move_to_trash)
+        self.reject_button.clicked.connect(self.handle_delete_action)
         button_layout.addWidget(self.reject_button)
         
         # Undoボタン
@@ -127,10 +128,10 @@ class MainWindow(QMainWindow):
         enter_action.triggered.connect(self.move_to_keep_folder)
         self.addAction(enter_action)
         
-        # Backspace: 削除フォルダへ移動（ゴミ箱へ）
+        # Backspace: 削除動作（設定により動作が変わる）
         delete_action = QAction(self)
         delete_action.setShortcut(Qt.Key_Backspace)
-        delete_action.triggered.connect(self.move_to_trash)
+        delete_action.triggered.connect(self.handle_delete_action)
         self.addAction(delete_action)
         
         # Ctrl+Z: 元に戻す
@@ -196,6 +197,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.keep_folder = dialog.get_keep_folder()
             self.delete_folder = dialog.get_delete_folder()
+            self.delete_to_trash = dialog.is_delete_to_trash()
             self.save_settings()
             
     def on_image_selected(self, current, previous):
@@ -214,6 +216,13 @@ class MainWindow(QMainWindow):
             return
             
         self._move_current_image(self.keep_folder, "keep")
+        
+    def handle_delete_action(self):
+        """削除アクション（設定によりゴミ箱か削除フォルダへ）"""
+        if self.delete_to_trash:
+            self.move_to_trash()
+        else:
+            self.move_to_delete_folder()
         
     def move_to_trash(self):
         """現在の画像をゴミ箱へ移動（Backspace キー）"""
@@ -398,6 +407,7 @@ class MainWindow(QMainWindow):
         """設定を保存"""
         self.settings.setValue("keep_folder", str(self.keep_folder) if self.keep_folder else "")
         self.settings.setValue("delete_folder", str(self.delete_folder) if self.delete_folder else "")
+        self.settings.setValue("delete_to_trash", self.delete_to_trash)
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
         
@@ -410,6 +420,8 @@ class MainWindow(QMainWindow):
         delete_folder = self.settings.value("delete_folder", "")
         if delete_folder:
             self.delete_folder = Path(delete_folder)
+            
+        self.delete_to_trash = self.settings.value("delete_to_trash", True, type=bool)
             
         geometry = self.settings.value("geometry")
         if geometry:
