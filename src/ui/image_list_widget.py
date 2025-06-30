@@ -138,8 +138,18 @@ class ImageListWidget(QListWidget):
         self.addItem(item)
         self.setItemWidget(item, item_widget)
         
-        # サムネイルを非同期で読み込む
-        self.load_thumbnail_async(image_path, item_widget)
+        # サムネイルを同期的に読み込む（パフォーマンスのため、今は同期版を使用）
+        try:
+            pixmap = QPixmap(str(image_path))
+            if not pixmap.isNull():
+                thumbnail = pixmap.scaled(
+                    self.thumbnail_size,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation
+                )
+                item_widget.set_thumbnail(thumbnail)
+        except Exception as e:
+            print(f"サムネイル読み込みエラー: {e}")
         
     def load_thumbnail_async(self, image_path: Path, item_widget: ImageItemWidget):
         """サムネイルを非同期で読み込む"""

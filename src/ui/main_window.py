@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Optional, List
 
 from .image_list_widget import ImageListWidget
+# デバッグ用：同期版を使用する場合はコメントを切り替える
+# from .image_list_widget_sync import ImageListWidgetSync as ImageListWidget
 from .image_preview_widget import ImagePreviewWidget
 from .settings_dialog import SettingsDialog
 from ..core.file_operations import FileOperationManager
