@@ -1,0 +1,25 @@
+[project]
+name = "image-selection-app"
+version = "0.1.0"
+description = "AI Image Selection and Renaming Application"
+authors = [
+    {name = "AI Assistant"}
+]
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "pyside6 (>=6.9.1,<7.0.0)",
+    "pillow (>=11.2.1,<12.0.0)",
+    "send2trash (>=1.8.3,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "image-selection-app"
+version = "0.1.0"
+description = "AI Image Selection and Renaming Application"
+authors = ["AI Assistant"]
+package-mode = false
